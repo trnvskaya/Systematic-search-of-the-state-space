@@ -4,6 +4,7 @@ from collections import deque
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import ListedColormap
+import copy
 import os
 
 
@@ -27,22 +28,15 @@ def load_maze(filename):
 
     return maze, start, end
 
-
-def print_maze(maze, start, end, path=[]):
-    maze_copy = [row[:] for row in maze]
-    for x, y in path:
-        maze_copy[x][y] = "o"
-
-    sx, sy = start
-    ex, ey = end
-    maze_copy[sx][sy] = "S"
-    maze_copy[ex][ey] = "E"
-    for row in maze_copy:
-        print("".join(row))
-    print()
-
-
-def visualize_maze(frames, algorithm_name):
+def visualize_maze(frame, changes, algorithm_name):
+    cell_value_map = {
+        "X": 0,
+        " ": 1,
+        "#": 2,
+        "o": 5,
+        "S": 3,
+        "E": 4
+    }
     def preprocess_for_plot(maze):
         return [[
             0 if cell == "X" else
@@ -54,14 +48,14 @@ def visualize_maze(frames, algorithm_name):
             -1 for cell in row
         ] for row in maze]
 
-    if "S" not in [cell for row in frames[0] for cell in row]:
+    if "S" not in [cell for row in frame for cell in row]:
         # print(maze[start[0]][start[1]], frames[0][start[0]][start[1]])
         raise ValueError("The start position 'S' is not present in the initial frame.")
-    if "E" not in [cell for row in frames[0] for cell in row]:
+    if "E" not in [cell for row in frame for cell in row]:
         # print(maze[end[0]][end[1]], frames[0][end[0]][end[1]])
         raise ValueError("The end position 'E' is not present in the initial frame.")
 
-    processed_frames = [preprocess_for_plot(frame) for frame in frames]
+    processed_frame = preprocess_for_plot(frame)
 
     cmap = ListedColormap([
         "black",
@@ -72,67 +66,77 @@ def visualize_maze(frames, algorithm_name):
     ])
 
     fig, ax = plt.subplots()
-    im = ax.imshow(processed_frames[0], cmap=cmap, interpolation="nearest")
+    im = ax.imshow(processed_frame, cmap=cmap, interpolation="nearest")
     ax.set_title(algorithm_name, fontsize=16)
     ax.axis("off")
     def update(frame):
-        im.set_array(processed_frames[frame])
+        change = changes[frame]
+        processed_frame[change[0]][change[1]] = cell_value_map.get(change[2], -1)
+        im.set_array(processed_frame)
         return [im]
 
     ani = animation.FuncAnimation(
-        fig, update, frames=len(processed_frames), interval=50, repeat=False, blit=True
+        fig, update, frames=len(changes), interval=50, repeat=False, blit=False
     )
     plt.show()
 
 
-def handle_edge_case(maze, start, end):
-    """Handles edge case where start == end."""
-    if start == end:
-        print("Start and end positions are the same! No search needed.")
-        maze[start[0]][start[1]] = "E"
-        return [[row[:] for row in maze]]
-    return None
-
 def dfs_with_animation(maze, start, end):
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-    stack = [(start, [start])]
+    stack = [start]
+    parent = {}
     visited = set()
-    opened = -1
     maze_copy = [row[:] for row in maze]
-    frames = [[row[:] for row in maze_copy]]
+    changes = []
+    opened_nodes = 0
+
 
     while stack:
-        (x, y), path = stack.pop()
+        x, y = stack.pop()
         if (x, y) in visited:
             continue
 
+        # Mark as visited
         visited.add((x, y))
-        maze_copy[x][y] = '#'
-        opened += 1
+        maze_copy[x][y] = "#"
+        changes.append([x, y, "#"])
+        opened_nodes += 1
 
-        frames.append([row[:] for row in maze_copy])
-
+        # Check if we have reached the end
         if (x, y) == end:
-            for px, py in path:
-                maze_copy[px][py] = "o" if (px, py) != start else "S"
-            maze_copy[x][y] = 'E'
-            frames.append([row[:] for row in maze_copy])
-            print("Nodes expanded: ", opened)
-            print("Path length: ", len(path) - 1)
-            return frames
+            # Reconstruct the path from `parent`
+            path = []
+            while (x, y) != start:
+                path.append((x, y))
+                x, y = parent[(x, y)]
+            path.reverse()
 
+            for px, py in path:
+                maze_copy[px][py] = "o"
+                changes.append([px, py, "o"])
+
+            maze_copy[start[0]][start[1]] = "S"
+            changes.append([start[0], start[1], "S"])
+            maze_copy[end[0]][end[1]] = "E"
+            changes.append([end[0], end[1], "E"])
+
+            print("Nodes expanded:", opened_nodes)
+            print("Path length:", len(path))
+            return changes
+
+        # Explore neighbors
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
             if (
-                    0 <= nx < len(maze)
-                    and 0 <= ny < len(maze[0])
+                    0 <= nx < len(maze_copy)
+                    and 0 <= ny < len(maze_copy[0])
                     and maze_copy[nx][ny] != "X"
                     and (nx, ny) not in visited
             ):
-                stack.append(((nx, ny), path + [(nx, ny)]))
+                stack.append((nx, ny))
+                parent[(nx, ny)] = (x, y)
 
-    return frames
-
+    return changes
 
 
 def bfs_with_animation(maze, start, end):
@@ -144,8 +148,8 @@ def bfs_with_animation(maze, start, end):
     visited = [[False] * len(maze_copy[0]) for _ in range(len(maze_copy))]
     visited[start[0]][start[1]] = True
     parent = {}
+    changes = []
     opened_nodes = 0
-    frames = [[row[:] for row in maze_copy]]
 
     while queue:
         x, y = queue.popleft()
@@ -162,12 +166,10 @@ def bfs_with_animation(maze, start, end):
                 visited[nx][ny] = True
                 queue.append((nx, ny))
                 maze_copy[nx][ny] = "#"
+                changes.append([nx, ny, "#"])
                 opened_nodes += 1
 
-                frames.append([row[:] for row in maze_copy])
-
                 if (nx, ny) == end:
-
                     path = []
                     while (nx, ny) != start:
                         path.append((nx, ny))
@@ -176,26 +178,28 @@ def bfs_with_animation(maze, start, end):
 
                     for px, py in path:
                         maze_copy[px][py] = "o"
-                    maze_copy[start[0]][start[1]] = "S"
-                    maze_copy[end[0]][end[1]] = "E"
+                        changes.append([px, py, "o"])
 
-                    frames.append([row[:] for row in maze_copy])
+                    maze_copy[start[0]][start[1]] = "S"
+                    changes.append([start[0], start[1], "S"])
+                    maze_copy[end[0]][end[1]] = "E"
+                    changes.append([end[0], end[1], "E"])
+
                     print("Nodes expanded:", opened_nodes)
                     print("Path length:", len(path))
-                    return frames
+                    return changes
 
-    return frames
-
+    return changes
 
 
 def greedy_search_with_animation(maze, start, end):
     directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
     pq = [(heuristic(start, end), start, [start])]
+    parent = {}
     visited = set()
-    opened = 0
-
     maze_copy = [row[:] for row in maze]
-    frames = [[row[:] for row in maze_copy]]
+    opened = 0
+    changes = []
 
     while pq:
         _, (x, y), path = heapq.heappop(pq)
@@ -204,17 +208,25 @@ def greedy_search_with_animation(maze, start, end):
 
         visited.add((x, y))
         maze_copy[x][y] = "#"
+        changes.append([x, y, '#'])
         opened += 1
-        frames.append([row[:] for row in maze_copy])
 
         if (x, y) == end:
+            path = []
+            while (x, y) != start:
+                path.append((x, y))
+                x, y = parent[(x, y)]
+            path.reverse()
             for px, py in path:
-                maze_copy[px][py] = "o" if (px, py) != start else "S"
-            maze_copy[x][y] = 'E'
-            frames.append([row[:] for row in maze_copy])
+                maze_copy[px][py] = "o"
+            changes.append([px, py, 'o'])
+            maze_copy[start[0]][start[1]] = "S"
+            changes.append([start[0], start[1], 'S'])
+            maze_copy[end[0]][end[1]] = "E"
+            changes.append([end[0], end[1], 'E'])
             print("Nodes expanded: ", opened)
-            print("Path length: ", len(path) - 1)
-            return frames
+            print("Path length: ", len(path))
+            return changes
 
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
@@ -224,77 +236,91 @@ def greedy_search_with_animation(maze, start, end):
                     and maze_copy[nx][ny] != "X"
                     and (nx, ny) not in visited
             ):
-                heapq.heappush(pq, (heuristic((nx, ny), end), (nx, ny), path + [(nx, ny)]))
-    return frames
+                heapq.heappush(pq, (heuristic((nx, ny), end), (nx, ny), path+[(nx, ny)]))
+                parent[(nx, ny)] = (x, y)
+    return changes
 
 
 def a_star_with_animation(maze, start, end):
     directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
     pq = [(0, start, [start])]
     g_score = {start: 0}
-    opened = 0
+    f_score = {start: heuristic(start, end)}
+    parent = {}
+    opened_nodes = 0
 
     maze_copy = [row[:] for row in maze]
-    frames = [[row[:] for row in maze_copy]]
+    changes = []
 
     while pq:
         _, (x, y), path = heapq.heappop(pq)
         maze_copy[x][y] = "#"
-        opened += 1
-        frames.append([row[:] for row in maze_copy])
+        changes.append([x, y, "#"])
+        opened_nodes += 1
 
         if (x, y) == end:
-            for px, py in path:
-                maze_copy[px][py] = "o" if (px, py) != start else "S"
-            maze_copy[x][y] = 'E'
-            frames.append([row[:] for row in maze_copy])
-            print("Nodes expanded: ", opened)
-            print("Path length: ", len(path) - 1)
-            return frames
+
+            final_path = path
+            for px, py in final_path:
+                maze_copy[px][py] = "o"
+                changes.append([px, py, "o"])
+
+            maze_copy[start[0]][start[1]] = "S"
+            changes.append([start[0], start[1], "S"])
+            maze_copy[end[0]][end[1]] = "E"
+            changes.append([end[0], end[1], "E"])
+
+            print("Nodes expanded:", opened_nodes)
+            print("Path length:", len(final_path) - 1)
+            return changes
 
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
-            if (
-                    0 <= nx < len(maze)
-                    and 0 <= ny < len(maze[0])
-                    and maze_copy[nx][ny] != "X"
-            ):
+            if 0 <= nx < len(maze) and 0 <= ny < len(maze[0]) and maze_copy[nx][ny] != "X":
                 new_g = g_score[(x, y)] + 1
                 if (nx, ny) not in g_score or new_g < g_score[(nx, ny)]:
                     g_score[(nx, ny)] = new_g
                     f_score = new_g + heuristic((nx, ny), end)
                     heapq.heappush(pq, (f_score, (nx, ny), path + [(nx, ny)]))
-    return frames
+                    parent[(nx, ny)] = (x, y)
+
+    return changes
+
+
+import random
 
 
 def random_search_with_animation(maze, start, end):
-    directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]  # Right, Left, Down, Up
+    directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
     path = [start]
     visited = set()
-    opened = 0
-    visited.add(start)
-
     maze_copy = [row[:] for row in maze]
-    frames = [[row[:] for row in maze_copy]]
+    changes = []
+    opened_nodes = 0
 
     while path:
         x, y = path[-1]
 
         if (x, y) == end:
             for px, py in path:
-                maze_copy[px][py] = "o" if (px, py) != start else "S"
-            maze_copy[start[0]][start[1]] = "S"
-            maze_copy[end[0]][end[1]] = "E"
-            frames.append([row[:] for row in maze_copy])
-            print("Nodes expanded: ", opened)
-            print("Path length: ", len(path))
-            break
+                maze_copy[px][py] = "o"
+                changes.append([px, py, "o"])
 
+            # Mark start and end points
+            maze_copy[start[0]][start[1]] = "S"
+            changes.append([start[0], start[1], "S"])
+            maze_copy[end[0]][end[1]] = "E"
+            changes.append([end[0], end[1], "E"])
+
+            print("Nodes expanded:", opened_nodes)
+            print("Path length:", len(path))
+            return changes
+
+        # Mark as visited
         visited.add((x, y))
         maze_copy[x][y] = "#"
-        maze_copy[start[0]][start[1]] = "S"
-        opened += 1
-        frames.append([row[:] for row in maze_copy])
+        changes.append([x, y, "#"])
+        opened_nodes += 1
 
         random.shuffle(directions)
         moved = False
@@ -302,10 +328,10 @@ def random_search_with_animation(maze, start, end):
         for dx, dy in directions:
             nx, ny = x + dx, y + dy
             if (
-                0 <= nx < len(maze)
-                and 0 <= ny < len(maze[0])
-                and maze_copy[nx][ny] != "X"
-                and (nx, ny) not in visited
+                    0 <= nx < len(maze_copy)
+                    and 0 <= ny < len(maze_copy[0])
+                    and maze_copy[nx][ny] != "X"
+                    and (nx, ny) not in visited
             ):
                 path.append((nx, ny))
                 moved = True
@@ -314,10 +340,9 @@ def random_search_with_animation(maze, start, end):
         if not moved:
             path.pop()
 
-        if not frames:
-            frames.append([row[:] for row in maze_copy])
+    print("No path found.")
+    return changes
 
-    return frames
 
 
 def heuristic(a, b):
@@ -342,6 +367,7 @@ if __name__ == "__main__":
     for filename in maze_files:
         print(f"\nProcessing: {filename}")
 
+        # Load the maze
         filepath = os.path.join(dataset_folder, filename)
         maze, start, end = load_maze(filepath)
 
@@ -359,5 +385,5 @@ if __name__ == "__main__":
             for algo_name, algo_func in algorithms:
                 print(f"\n-----> {algo_name} on {filename} <-----")
                 frames = algo_func(maze, start, end)
-                visualize_maze(frames, f"{algo_name} - {filename}")
+                visualize_maze(maze, frames, f"{algo_name} - {filename}")
                 print("-" * 30)
