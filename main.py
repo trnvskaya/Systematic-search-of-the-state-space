@@ -36,16 +36,9 @@ def visualize_maze(frame, changes, algorithm_name):
         "E": 4,
         "o": 5
     }
+
     def preprocess_for_plot(maze):
-        return [[
-            0 if cell == "X" else
-            1 if cell == " " else
-            2 if cell == "#" else
-            3 if cell == "S" else
-            4 if cell == "E" else
-            5 if cell == "o" else
-            -1 for cell in row
-        ] for row in maze]
+        return [[cell_value_map.get(cell, -1) for cell in row] for row in maze]
 
     if "S" not in [cell for row in frame for cell in row]:
         raise ValueError("The start position 'S' is not present in the initial frame")
@@ -57,6 +50,7 @@ def visualize_maze(frame, changes, algorithm_name):
     cmap = ListedColormap([
         "black",
         "white",
+
         "green",
         "red",
         "yellow"
@@ -66,6 +60,7 @@ def visualize_maze(frame, changes, algorithm_name):
     im = ax.imshow(processed_frame, cmap=cmap, interpolation="nearest")
     ax.set_title(algorithm_name, fontsize=16)
     ax.axis("off")
+
     def update(frame):
         change = changes[frame]
         processed_frame[change[0]][change[1]] = cell_value_map.get(change[2], -1)
@@ -73,9 +68,10 @@ def visualize_maze(frame, changes, algorithm_name):
         return [im]
 
     ani = animation.FuncAnimation(
-        fig, update, frames=len(changes), interval=50, repeat=False, blit=False
+        fig, update, frames=len(changes), interval=10, repeat=False, blit=False
     )
     plt.show()
+
 
 
 def dfs_with_animation(maze, start, end):
@@ -85,6 +81,7 @@ def dfs_with_animation(maze, start, end):
     visited = set()
     maze_copy = [row[:] for row in maze]
     changes = []
+    changes.append([start[0], start[1], "S"])
     opened_nodes = 0
 
 
@@ -96,7 +93,8 @@ def dfs_with_animation(maze, start, end):
         # Mark as visited
         visited.add((x, y))
         maze_copy[x][y] = "#"
-        changes.append([x, y, "#"])
+        if (x, y) != start:
+            changes.append([x, y, "#"])
         opened_nodes += 1
 
 
@@ -179,7 +177,6 @@ def bfs_with_animation(maze, start, end):
                     maze_copy[start[0]][start[1]] = "S"
                     changes.append([start[0], start[1], "S"])
                     maze_copy[end[0]][end[1]] = "E"
-                    changes.append([end[0], end[1], "E"])
 
                     print("Nodes expanded:", opened_nodes)
                     print("Path length:", len(path))
@@ -204,7 +201,8 @@ def greedy_search_with_animation(maze, start, end):
 
         visited.add((x, y))
         maze_copy[x][y] = "#"
-        changes.append([x, y, '#'])
+        if (x, y) != start:
+            changes.append([x, y, '#'])
         opened += 1
 
         if (x, y) == end:
@@ -241,7 +239,6 @@ def a_star_with_animation(maze, start, end):
     directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
     pq = [(0, start, [start])]
     g_score = {start: 0}
-    f_score = {start: heuristic(start, end)}
     parent = {}
     opened_nodes = 0
 
@@ -251,7 +248,8 @@ def a_star_with_animation(maze, start, end):
     while pq:
         _, (x, y), path = heapq.heappop(pq)
         maze_copy[x][y] = "#"
-        changes.append([x, y, "#"])
+        if (x, y) != start:
+            changes.append([x, y, "#"])
         opened_nodes += 1
 
         if (x, y) == end:
@@ -312,7 +310,8 @@ def random_search_with_animation(maze, start, end):
         # Mark as visited
         visited.add((x, y))
         maze_copy[x][y] = "#"
-        changes.append([x, y, "#"])
+        if (x, y) != start:
+            changes.append([x, y, "#"])
         opened_nodes += 1
 
         random.shuffle(directions)
@@ -333,7 +332,6 @@ def random_search_with_animation(maze, start, end):
         if not moved:
             path.pop()
 
-    print("No path found.")
     return changes
 
 
