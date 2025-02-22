@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import ListedColormap
 import os
+import numpy as np
 
 
 def load_maze(filename):
@@ -27,51 +28,39 @@ def load_maze(filename):
 
     return maze, start, end
 
+
 def visualize_maze(frame, changes, algorithm_name):
-    cell_value_map = {
-        "X": 0,
-        " ": 1,
-        "#": 2,
-        "S": 3,
-        "E": 4,
-        "o": 5
-    }
+
+    cell_value_map = {"X": 0, " ": 1, "#": 2, "S": 3, "E": 4, "o": 5}
+    colors = ["black", "white", "green", "yellow", "blue", "red"]
 
     def preprocess_for_plot(maze):
-        return [[cell_value_map.get(cell, -1) for cell in row] for row in maze]
+        return np.array([[cell_value_map.get(cell, -1) for cell in row] for row in maze])
 
-    if "S" not in [cell for row in frame for cell in row]:
+    if "S" not in np.array(frame).flatten():
         raise ValueError("The start position 'S' is not present in the initial frame")
-    if "E" not in [cell for row in frame for cell in row]:
+    if "E" not in np.array(frame).flatten():
         raise ValueError("The end position 'E' is not present in the initial frame")
 
     processed_frame = preprocess_for_plot(frame)
-
-    cmap = ListedColormap([
-        "black",
-        "white",
-
-        "green",
-        "red",
-        "yellow"
-    ])
+    cmap = ListedColormap(colors)
 
     fig, ax = plt.subplots()
-    im = ax.imshow(processed_frame, cmap=cmap, interpolation="nearest")
+    im = ax.imshow(processed_frame, cmap=cmap, interpolation="nearest", vmin=0, vmax=len(colors) - 1)
     ax.set_title(algorithm_name, fontsize=16)
     ax.axis("off")
 
-    def update(frame):
-        change = changes[frame]
-        processed_frame[change[0]][change[1]] = cell_value_map.get(change[2], -1)
+    def update(frame_idx):
+        change = changes[frame_idx]
+        row, col, new_symbol = change
+        processed_frame[row, col] = cell_value_map.get(new_symbol, -1)
         im.set_array(processed_frame)
         return [im]
 
     ani = animation.FuncAnimation(
-        fig, update, frames=len(changes), interval=10, repeat=False, blit=False
+        fig, update, frames=len(changes), interval=50, repeat=False, blit=False
     )
     plt.show()
-
 
 
 def dfs_with_animation(maze, start, end):
@@ -107,7 +96,8 @@ def dfs_with_animation(maze, start, end):
 
             for px, py in path:
                 maze_copy[px][py] = "o"
-                changes.append([px, py, "o"])
+                if (px, py) != end:
+                    changes.append([px, py, "o"])
 
             maze_copy[start[0]][start[1]] = "S"
             changes.append([start[0], start[1], "S"])
@@ -172,7 +162,8 @@ def bfs_with_animation(maze, start, end):
 
                     for px, py in path:
                         maze_copy[px][py] = "o"
-                        changes.append([px, py, "o"])
+                        if (px, py) != end:
+                            changes.append([px, py, "o"])
 
                     maze_copy[start[0]][start[1]] = "S"
                     changes.append([start[0], start[1], "S"])
@@ -213,7 +204,8 @@ def greedy_search_with_animation(maze, start, end):
             path.reverse()
             for px, py in path:
                 maze_copy[px][py] = "o"
-                changes.append([px, py, "o"])
+                if (px, py) != end:
+                    changes.append([px, py, "o"])
             maze_copy[start[0]][start[1]] = "S"
             changes.append([start[0], start[1], "S"])
             maze_copy[end[0]][end[1]] = "E"
@@ -248,7 +240,7 @@ def a_star_with_animation(maze, start, end):
     while pq:
         _, (x, y), path = heapq.heappop(pq)
         maze_copy[x][y] = "#"
-        if (x, y) != start:
+        if (x, y) != start and (x, y) != end:
             changes.append([x, y, "#"])
         opened_nodes += 1
 
@@ -257,7 +249,8 @@ def a_star_with_animation(maze, start, end):
             final_path = path
             for px, py in final_path:
                 maze_copy[px][py] = "o"
-                changes.append([px, py, "o"])
+                if (px, py) != end:
+                    changes.append([px, py, "o"])
 
             maze_copy[start[0]][start[1]] = "S"
             changes.append([start[0], start[1], "S"])
@@ -295,7 +288,8 @@ def random_search_with_animation(maze, start, end):
         if (x, y) == end:
             for px, py in path:
                 maze_copy[px][py] = "o"
-                changes.append([px, py, "o"])
+                if (px, py) != end:
+                    changes.append([px, py, "o"])
 
             # Mark start and end points
             maze_copy[start[0]][start[1]] = "S"
